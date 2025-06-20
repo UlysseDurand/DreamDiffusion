@@ -11,3 +11,4 @@ results/*
 pretrains/models/v1-5-pruned.ckpt
 pretrains/eeg-pretrain/*.pth
 pretrains/generation/*.pth
+eegpt_mcae_58chs_4s_large4E.ckpt

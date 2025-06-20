@@ -15,6 +15,7 @@ import copy
 from config import Config_Generative_Model, Config_MBM_EEG
 from dataset import  create_EEG_dataset
 from dc_ldm.ldm_for_eeg import eLDM
+from EEGPT_mcae_finetune import EEGPTClassifier
 from eval_metrics import get_similarity_metric
 
 
