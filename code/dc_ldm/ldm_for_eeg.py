@@ -11,7 +11,7 @@ from torchvision.utils import make_grid
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from sc_mbm.mae_for_eeg import eeg_encoder, classify_network, mapping 
-from EEGPT_mcae_finetune import EEGPTClassifier
+from EEGPT import LitEEGPTCausal, EEGPT2DD
 from PIL import Image
 def create_model_from_config(config, num_voxels, global_pool):
     model = eeg_encoder(time_len=num_voxels, patch_size=config.patch_size, embed_dim=config.embed_dim,
@@ -31,15 +31,16 @@ class cond_stage_model(nn.Module):
     def __init__(self, metafile, num_voxels=440, cond_dim=1280, global_pool=True, clip_tune = True, cls_tune = False):
         super().__init__()
         # prepare pretrained fmri mae 
-        model = EEGPTClassifier(metafile['config'])
+        modelencoder = LitEEGPTCausal(metafile['checkpoint_path'])
+        model = EEGPT2DD(modelencoder)
         self.mae = model
         if clip_tune:
             self.mapping = mapping()
         if cls_tune:
             self.cls_net = classify_network()
 
-        self.fmri_seq_len = model.num_patches
-        self.fmri_latent_dim = model.embed_dim
+        self.fmri_seq_len = 128
+        self.fmri_latent_dim = 1024
         if global_pool == False:
             self.channel_mapper = nn.Sequential(
                 nn.Conv1d(self.fmri_seq_len, self.fmri_seq_len // 2, 1, bias=True),

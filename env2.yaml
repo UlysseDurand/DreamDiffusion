@@ -1,0 +1,14 @@
+name: eegpt_dd
+channels:
+  - pytorch
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.8.5
+  - pip<24.1
+  - pip:
+      - torch==1.12.1+cu116          # fixed version
+      - torchvision==0.13.1+cu116    # fixed version
+      - torchaudio==0.12.1+cu116
+      - -e ./code
+      - --extra-index-url https://download.pytorch.org/whl/cu116

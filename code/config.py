@@ -17,7 +17,7 @@ class Config_MBM_EEG(Config_MAE_fMRI):
         self.weight_decay = 0.05
         self.num_epoch = 500
         self.warmup_epochs = 40
-        self.batch_size = 100
+        self.batch_size = 10
         self.clip_grad = 0.8
         
         # Model Parameters
@@ -71,7 +71,7 @@ class Config_EEG_finetune(Config_MBM_finetune):
         self.lr = 5.3e-5
         self.weight_decay = 0.05
         self.num_epoch = 15
-        self.batch_size = 16 if self.dataset == 'GOD' else 4 
+        self.batch_size = 1 if self.dataset == 'GOD' else 1 
         self.mask_ratio = 0.5
         self.accum_iter = 1
         self.clip_grad = 0.8
@@ -111,7 +111,7 @@ class Config_Generative_Model:
 
         np.random.seed(self.seed)
         # finetune parameters
-        self.batch_size = 5 if self.dataset == 'GOD' else 25
+        self.batch_size = 1 if self.dataset == 'GOD' else 1
         self.lr = 5.3e-5
         self.num_epoch = 500
         
@@ -162,7 +162,7 @@ class Config_Cls_Model:
 
         np.random.seed(self.seed)
         # finetune parameters
-        self.batch_size = 5 if self.dataset == 'GOD' else 25
+        self.batch_size = 1 if self.dataset == 'GOD' else 1
         self.lr = 5.3e-5
         self.num_epoch = 50
         

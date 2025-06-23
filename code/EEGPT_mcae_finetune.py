@@ -6,6 +6,8 @@ import numpy as np
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
 
 import math
 
@@ -28,6 +30,53 @@ CHANNEL_DICT = {k.upper():v for v,k in enumerate(
                                'O1', 'OZ', 'O2', ])}
 
 ################################# Utils ######################################
+
+
+def scaled_dot_product_attention(
+    query, key, value,
+    attn_mask=None, dropout_p=0.0, is_causal=False, scale=None
+):
+    """
+    Args:
+        query: (B, H, L, D)
+        key:   (B, H, S, D)
+        value: (B, H, S, D)
+        attn_mask: optional mask, shape broadcastable to (B, H, L, S)
+        dropout_p: dropout probability
+        is_causal: if True, apply causal (upper-triangular) mask
+        scale: optional scaling factor; defaults to 1/sqrt(D)
+    Returns:
+        Tensor: (B, H, L, D)
+    """
+    B, H, L, D = query.shape
+    _, _, S, _ = key.shape
+
+    scale_factor = scale or (1.0 / math.sqrt(D))
+    attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
+
+    # Apply causal mask
+    if is_causal:
+        causal_mask = torch.tril(torch.ones(L, S, device=query.device, dtype=torch.bool))
+        attn_bias = attn_bias.masked_fill(~causal_mask, float('-inf'))
+
+    # Apply provided attention mask
+    if attn_mask is not None:
+        if attn_mask.dtype == torch.bool:
+            attn_bias = attn_bias.masked_fill(~attn_mask, float('-inf'))
+        else:
+            attn_bias = attn_bias + attn_mask
+
+    # Compute scaled attention scores
+    scores = torch.matmul(query, key.transpose(-2, -1)) * scale_factor
+    scores = scores + attn_bias  # shape (B, H, L, S)
+
+    # Softmax, dropout, and weighted sum
+    attn_weights = F.softmax(scores, dim=-1)
+    if dropout_p > 0:
+        attn_weights = F.dropout(attn_weights, p=dropout_p, training=True)
+
+    output = torch.matmul(attn_weights, value)
+    return output
 
 def _no_grad_trunc_normal_(tensor, mean, std, a, b):
     # Cut & paste from PyTorch official master until it's in a few official releases - RW
@@ -248,7 +297,7 @@ class Attention(nn.Module):
                 attn_weight = torch.softmax((q @ k.transpose(-2, -1) / math.sqrt(q.size(-1))), dim=-1)
             return attn_weight
         # efficient attention using Flash Attention CUDA kernels
-        y = torch.nn.functional.scaled_dot_product_attention(
+        y = scaled_dot_product_attention(
             q, k, v, attn_mask=None, dropout_p=self.attn_drop if self.training else 0, is_causal=self.is_causal)
         x = y.transpose(1, 2).contiguous().view(B, T, C) #(B, nh, T, hs) -> (B, T, hs*nh)
         x = self.proj(x)

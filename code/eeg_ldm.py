@@ -152,7 +152,8 @@ def main(config):
 
     # prepare pretrained mbm 
 
-    pretrain_mbm_metafile = torch.load(config.pretrain_mbm_path, map_location='cpu')
+    # pretrain_mbm_metafile = torch.load(config.pretrain_mbm_path, map_location='cpu')
+    pretrain_mbm_metafile = {'checkpoint_path': 'pretrains/eeg-pretrain/eegpt_mcae_58chs_4s_large4E.ckpt'}
 
     # create generateive model
     generative_model = eLDM(pretrain_mbm_metafile, num_voxels,
@@ -244,6 +245,6 @@ if __name__ == '__main__':
     
     wandb_init(config, output_path)
 
-    # logger = WandbLogger()
-    config.logger = None # logger
+    config.logger = WandbLogger()
+    # config.logger = None # logger
     main(config)
