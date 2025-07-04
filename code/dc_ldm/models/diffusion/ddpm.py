@@ -1798,24 +1798,25 @@ class EEGClassifier(pl.LightningModule):
             return res
 
     def validation_step(self, batch, batch_idx):
-        print('val step')
-        print('batch_idx:', batch_idx)
-        # if batch_idx != 0:
-        #     return
-        
-        if self.validation_count % 1 == 0 and self.trainer.current_epoch != 0:
-            self.full_validation(batch)
-        # else:
-        #     # pass
-        #     grid, all_samples, state = self.generate(batch, ddim_steps=self.ddim_steps, num_samples=3, limit=5)
-        #     metric, metric_list = self.get_eval_metric(all_samples, avg=self.eval_avg)
-        #     grid_imgs = Image.fromarray(grid.astype(np.uint8))
-        #     # self.logger.log_image(key=f'samples_test', images=[grid_imgs])
-        #     metric_dict = {f'val/{k}':v for k, v in zip(metric_list, metric)}
-        #     # self.logger.log_metrics(metric_dict)
-        #     if metric[-1] > self.run_full_validation_threshold:
-        #         self.full_validation(batch, state=state)
-        self.validation_count += 1
+        with torch.autocast(device_type='cuda', dtype=torch.float16):
+            print('val step')
+            print('batch_idx:', batch_idx)
+            # if batch_idx != 0:
+            #     return
+            
+            if self.validation_count % 1 == 0 and self.trainer.current_epoch != 0:
+                self.full_validation(batch)
+            # else:
+            #     # pass
+            #     grid, all_samples, state = self.generate(batch, ddim_steps=self.ddim_steps, num_samples=3, limit=5)
+            #     metric, metric_list = self.get_eval_metric(all_samples, avg=self.eval_avg)
+            #     grid_imgs = Image.fromarray(grid.astype(np.uint8))
+            #     # self.logger.log_image(key=f'samples_test', images=[grid_imgs])
+            #     metric_dict = {f'val/{k}':v for k, v in zip(metric_list, metric)}
+            #     # self.logger.log_metrics(metric_dict)
+            #     if metric[-1] > self.run_full_validation_threshold:
+            #         self.full_validation(batch, state=state)
+            self.validation_count += 1
 
 
     def full_validation(self, batch, state=None):

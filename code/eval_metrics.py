@@ -131,19 +131,21 @@ def get_n_way_top_k_acc(pred_imgs, ground_truth, n_way, num_trials, top_k, devic
     
     acc_list = []
     std_list = []
-    for pred, gt in zip(pred_imgs, ground_truth):
-        pred = preprocess(Image.fromarray(pred.astype(np.uint8))).unsqueeze(0).to(device)
-        gt = preprocess(Image.fromarray(gt.astype(np.uint8))).unsqueeze(0).to(device)
-        gt_class_id = model(gt).squeeze(0).softmax(0).argmax().item()
-        pred_out = model(pred).squeeze(0).softmax(0).detach()
 
-        acc, std = n_way_top_k_acc(pred_out, gt_class_id, n_way, num_trials, top_k)
-        acc_list.append(acc)
-        std_list.append(std)
-       
-    if return_std:
-        return acc_list, std_list
-    return acc_list
+    with autocast(dtype=torch.float16):
+        for pred, gt in zip(pred_imgs, ground_truth):
+            pred = preprocess(Image.fromarray(pred.astype(np.uint8))).unsqueeze(0).to(device)
+            gt = preprocess(Image.fromarray(gt.astype(np.uint8))).unsqueeze(0).to(device)
+            gt_class_id = model(gt).squeeze(0).softmax(0).argmax().item()
+            pred_out = model(pred).squeeze(0).softmax(0).detach()
+
+            acc, std = n_way_top_k_acc(pred_out, gt_class_id, n_way, num_trials, top_k)
+            acc_list.append(acc)
+            std_list.append(std)
+        
+        if return_std:
+            return acc_list, std_list
+        return acc_list
 
 def get_similarity_metric(img1, img2, method='pair-wise', metric_name='mse', **kwargs):
     # img1: n, w, h, 3
