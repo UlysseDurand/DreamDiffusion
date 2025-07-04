@@ -71,7 +71,7 @@ class Config_EEG_finetune(Config_MBM_finetune):
         self.lr = 5.3e-5
         self.weight_decay = 0.05
         self.num_epoch = 15
-        self.batch_size = 1 if self.dataset == 'GOD' else 1 
+        self.batch_size = 2 if self.dataset == 'GOD' else 2
         self.mask_ratio = 0.5
         self.accum_iter = 1
         self.clip_grad = 0.8
@@ -111,11 +111,11 @@ class Config_Generative_Model:
 
         np.random.seed(self.seed)
         # finetune parameters
-        self.batch_size = 1 if self.dataset == 'GOD' else 1
+        self.batch_size = 2 if self.dataset == 'GOD' else 2
         self.lr = 5.3e-5
         self.num_epoch = 500
         
-        self.precision = 32
+        self.precision = 16
         self.accumulate_grad = 1
         self.crop_ratio = 0.2
         self.global_pool = False
@@ -162,11 +162,11 @@ class Config_Cls_Model:
 
         np.random.seed(self.seed)
         # finetune parameters
-        self.batch_size = 1 if self.dataset == 'GOD' else 1
+        self.batch_size = 2 if self.dataset == 'GOD' else 2
         self.lr = 5.3e-5
         self.num_epoch = 50
         
-        self.precision = 32
+        self.precision = 16
         self.accumulate_grad = 1
         self.crop_ratio = 0.15
         self.global_pool = False

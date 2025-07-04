@@ -130,7 +130,7 @@ class eLDM:
         self.metafile = metafile
 
     def finetune(self, trainers, dataset, test_dataset, bs1, lr1,
-                output_path, config=None):
+                output_path, config=None, reserved_tensor = None):
         config.trainer = None
         config.logger = None
         self.model.main_config = config
@@ -151,6 +151,9 @@ class eLDM:
         self.model.learning_rate = lr1
         self.model.train_cond_stage_only = True
         self.model.eval_avg = config.eval_avg
+
+        del reserved_tensor
+        torch.cuda.empty_cache()
         trainers.fit(self.model, dataloader, val_dataloaders=test_loader)
 
         self.model.unfreeze_whole_model()

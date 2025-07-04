@@ -341,7 +341,7 @@ class EEGDataset(Dataset):
         x2 = np.linspace(0, 1, self.data_len)
         f = interp1d(x, eeg)
         eeg = f(x2)
-        eeg = torch.from_numpy(eeg).float()
+        eeg = torch.from_numpy(eeg).half()
         ##### 2023 2 13 add preprocess
         label = torch.tensor(self.data[i]["label"]).long()
 
@@ -349,7 +349,7 @@ class EEGDataset(Dataset):
         image_name = self.images[self.data[i]["image"]]
         image_path = os.path.join(self.imagenet, image_name.split('_')[0], image_name+'.JPEG')
         # print(image_path)
-        image_raw = Image.open(image_path).convert('RGB') 
+        image_raw = np.float16(Image.open(image_path).convert('RGB'))
         
         image = np.array(image_raw) / 255.0
         image_raw = self.processor(images=image_raw, return_tensors="pt")

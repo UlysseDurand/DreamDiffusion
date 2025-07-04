@@ -123,6 +123,10 @@ def main(config):
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
 
+
+    bytes_to_reserve = 15 * 1024 ** 3  # 20 GiB
+    reserved_tensor = torch.empty(bytes_to_reserve // 4, dtype=torch.float32, device=device)
+
     crop_pix = int(config.crop_ratio*config.img_size)
     img_transform_train = transforms.Compose([
         normalize,
@@ -168,7 +172,7 @@ def main(config):
     # finetune the model
     trainer = create_trainer(config.num_epoch, config.precision, config.accumulate_grad, config.logger, check_val_every_n_epoch=2)
     generative_model.finetune(trainer, eeg_latents_dataset_train, eeg_latents_dataset_test,
-                config.batch_size, config.lr, config.output_path, config=config)
+                config.batch_size, config.lr, config.output_path, config=config, reserved_tensor=reserved_tensor)
 
     # generate images
     # generate limited train images and generate images for subjects seperately
@@ -221,11 +225,11 @@ def create_readme(config, path):
 
 def create_trainer(num_epoch, precision=16, accumulate_grad_batches=2,logger=None,check_val_every_n_epoch=0):
     acc = 'gpu' if torch.cuda.is_available() else 'cpu'
-    return pl.Trainer(accelerator=acc, strategy='ddp' , devices=2,
-    max_epochs=num_epoch, logger=logger, precision=precision,
-    accumulate_grad_batches=accumulate_grad_batches, enable_checkpointing=False,
-    enable_model_summary=False, gradient_clip_val=0.5,
-    check_val_every_n_epoch=check_val_every_n_epoch)
+    return pl.Trainer(accelerator=acc, 
+        max_epochs=num_epoch, logger=logger, precision=precision, strategy='ddp', devices=2,
+        accumulate_grad_batches=accumulate_grad_batches, enable_checkpointing=False,
+        enable_model_summary=False, gradient_clip_val=0.5,
+        check_val_every_n_epoch=check_val_every_n_epoch)
   
 if __name__ == '__main__':
     args = get_args_parser()

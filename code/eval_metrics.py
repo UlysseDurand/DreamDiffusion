@@ -8,6 +8,8 @@ import torch
 from einops import rearrange
 from torchmetrics.functional import accuracy
 from PIL import Image
+from torch.cuda.amp import autocast
+
 
 def larger_the_better(gt, comp):
     return gt > comp
@@ -127,7 +129,7 @@ def get_n_way_top_k_acc(pred_imgs, ground_truth, n_way, num_trials, top_k, devic
     model = vit_h_14(weights=weights)
     preprocess = weights.transforms()
     model = model.to(device)
-    model = model.eval()
+    model = model.eval().half()
     
     acc_list = []
     std_list = []

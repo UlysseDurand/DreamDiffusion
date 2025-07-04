@@ -1721,7 +1721,7 @@ class EEGClassifier(pl.LightningModule):
         x = batch['image']
         if bs is not None:
             x = x[:bs]
-        x = x.to(self.device)
+        x = x.to(self.device).contiguous()
 
         # print('z.shape')
         # print(z.shape)
