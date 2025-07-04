@@ -1,5 +1,4 @@
 import torch
-import pytorch_lightning as pl
 import torch.nn.functional as F
 from contextlib import contextmanager
 import numpy as np
@@ -132,7 +131,7 @@ class VectorQuantizer(nn.Module):
 
         return z_q
 
-class VQModel(pl.LightningModule):
+class VQModel:
     def __init__(self,
                  ddconfig,
                  lossconfig,
@@ -246,7 +245,7 @@ class VQModel(pl.LightningModule):
         x = batch[k]
         if len(x.shape) == 3:
             x = x[..., None]
-        x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
+        x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format)
         if self.batch_resize_range is not None:
             lower_size = self.batch_resize_range[0]
             upper_size = self.batch_resize_range[1]
@@ -309,8 +308,6 @@ class VQModel(pl.LightningModule):
                    prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
         self.log(f"val{suffix}/aeloss", aeloss,
                    prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
-        if version.parse(pl.__version__) >= version.parse('1.4.0'):
-            del log_dict_ae[f"val{suffix}/rec_loss"]
         self.log_dict(log_dict_ae)
         self.log_dict(log_dict_disc)
         return self.log_dict
@@ -403,7 +400,7 @@ class VQModelInterface(VQModel):
         return dec
 
     
-class AutoencoderKL(pl.LightningModule):
+class AutoencoderKL(nn.Module):
     def __init__(self,
                  ddconfig,
                  lossconfig,
@@ -467,7 +464,7 @@ class AutoencoderKL(pl.LightningModule):
         x = batch[k]
         if len(x.shape) == 3:
             x = x[..., None]
-        x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
+        x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format)
         return x
 
     def training_step(self, batch, batch_idx, optimizer_idx):

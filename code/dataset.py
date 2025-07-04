@@ -331,10 +331,14 @@ class EEGDataset(Dataset):
     # Get item
     def __getitem__(self, i):
         # Process EEG
-        # print(self.data[i])
         eeg = self.data[i]["eeg"].float().t()
-
         eeg = eeg[20:460,:]
+
+        if i == 0:  # Only print for first sample
+            print("\n=== Dataset Validation ===")
+            print(f"Raw EEG shape from file: {self.data[i]['eeg'].shape}")
+            print(f"Processed EEG shape: {eeg.shape}")
+            print(f"EEG dtype: {eeg.dtype}")
         ##### 2023 2 13 add preprocess and transpose
         eeg = np.array(eeg.transpose(0,1))
         x = np.linspace(0, 1, eeg.shape[-1])
@@ -441,4 +445,3 @@ if __name__ == '__main__':
     import scipy.io as scio
     import copy
     import shutil
-

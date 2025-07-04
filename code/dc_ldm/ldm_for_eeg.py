@@ -1,6 +1,8 @@
 import numpy as np
 import wandb
 import torch
+import psutil
+import gc
 from dc_ldm.util import instantiate_from_config
 from omegaconf import OmegaConf
 import torch.nn as nn
@@ -13,6 +15,18 @@ import torch.nn.functional as F
 from sc_mbm.mae_for_eeg import eeg_encoder, classify_network, mapping 
 from EEGPT import LitEEGPTCausal, EEGPT2DD
 from PIL import Image
+
+from pympler import muppy, summary
+
+def print_mem_usage():
+    print("Memory Usage:")
+    print(f"CPU RAM: {psutil.virtual_memory().used/1024**3:.2f}GB / {psutil.virtual_memory().total/1024**3:.2f}GB")
+    free_mem, total_mem = torch.cuda.mem_get_info()
+    print(f"GPU RAM: {torch.cuda.memory_reserved()/1024**3:.2f}GB / {total_mem/1024**3:.2f}GB")
+    # all_objects = muppy.get_objects()
+    # sum_obj = summary.summarize(all_objects)
+    # summary.print_(sum_obj)
+
 def create_model_from_config(config, num_voxels, global_pool):
     model = eeg_encoder(time_len=num_voxels, patch_size=config.patch_size, embed_dim=config.embed_dim,
                 depth=config.depth, num_heads=config.num_heads, mlp_ratio=config.mlp_ratio, global_pool=global_pool) 
@@ -31,8 +45,8 @@ class cond_stage_model(nn.Module):
     def __init__(self, metafile, num_voxels=440, cond_dim=1280, global_pool=True, clip_tune = True, cls_tune = False):
         super().__init__()
         # prepare pretrained fmri mae 
-        modelencoder = LitEEGPTCausal(metafile['checkpoint_path'])
-        model = EEGPT2DD(modelencoder)
+        modelencoder = LitEEGPTCausal(metafile['checkpoint_path']).half()
+        model = EEGPT2DD(modelencoder).half()
         self.mae = model
         if clip_tune:
             self.mapping = mapping()
@@ -95,9 +109,17 @@ class eLDM:
         # self.ckp_path = os.path.join(pretrain_root, 'model.ckpt')
         self.ckp_path = os.path.join(pretrain_root, 'models/v1-5-pruned.ckpt')
         self.config_path = os.path.join(pretrain_root, 'models/config15.yaml') 
+        
         config = OmegaConf.load(self.config_path)
         config.model.params.unet_config.params.use_time_cond = use_time_cond
         config.model.params.unet_config.params.global_pool = global_pool
+
+        print("\n=== Model Input/Output Specifications ===")
+        print(f"Expected EEG input shape: (batch_size, {num_voxels})")
+        print(f"EEG input dtype: torch.float32")
+        print(f"Image output shape: (batch_size, 3, {config.model.params.image_size}, {config.model.params.image_size})") 
+        print(f"Image output dtype: torch.float32 (normalized to [-1, 1])")
+        print("=======================================\n")
 
         self.cond_dim = config.model.params.unet_config.params.context_dim
 
@@ -119,7 +141,7 @@ class eLDM:
 
         
         self.device = device    
-        self.model = model
+        self.model = model.to(device).half()
         
         self.model.clip_tune = clip_tune
         self.model.cls_tune = cls_tune
@@ -129,44 +151,79 @@ class eLDM:
         self.fmri_latent_dim = model.cond_stage_model.fmri_latent_dim
         self.metafile = metafile
 
-    def finetune(self, trainers, dataset, test_dataset, bs1, lr1,
-                output_path, config=None, reserved_tensor = None):
+    def training_step(self, batch, batch_idx):
+        # Implement training step logic
+        batch = {k: v.to(self.device) for k, v in batch.items()}
+        loss = self.model.training_step(batch, batch_idx)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        # Implement validation step logic  
+        batch = {k: v.to(self.device) for k, v in batch.items()}
+        loss = self.model.validation_step(batch, batch_idx)
+        return loss
+
+    def finetune(self, train_loader, test_loader, num_epochs, lr,
+                output_path, config=None):
         config.trainer = None
         config.logger = None
         self.model.main_config = config
         self.model.output_path = output_path
-        # self.model.train_dataset = dataset
-        self.model.run_full_validation_threshold = 0.15
-        # stage one: train the cond encoder with the pretrained one
-      
-        # # stage one: only optimize conditional encoders
-        print('\n##### Stage One: only optimize conditional encoders #####')
-        dataloader = DataLoader(dataset, batch_size=bs1, shuffle=True)
-        test_loader = DataLoader(test_dataset, batch_size=bs1, shuffle=False)
-        self.model.unfreeze_whole_model()
-        self.model.freeze_first_stage()
-        # self.model.freeze_whole_model()
-        # self.model.unfreeze_cond_stage()
-
-        self.model.learning_rate = lr1
-        self.model.train_cond_stage_only = True
         self.model.eval_avg = config.eval_avg
 
-        del reserved_tensor
-        torch.cuda.empty_cache()
-        trainers.fit(self.model, dataloader, val_dataloaders=test_loader)
-
-        self.model.unfreeze_whole_model()
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         
-        torch.save(
-            {
-                'model_state_dict': self.model.state_dict(),
-                'config': config,
-                'state': torch.random.get_rng_state()
+        best_val_loss = float('inf')
+        for epoch in range(num_epochs):
 
-            },
-            os.path.join(output_path, 'checkpoint.pth')
-        )
+            self.model.train()
+            train_loss = 0.0
+            
+            # Training loop
+            for batch_idx, batch in enumerate(train_loader):
+                print(f"\n### BATCH {batch_idx}")
+                optimizer.zero_grad()
+                print_mem_usage()
+                loss = self.training_step(batch, None)
+                print("FORWARD PASS OK")
+                print_mem_usage()
+                loss.backward()
+                print("BACKWARD PASS OK")
+                print_mem_usage()
+                optimizer.step()
+                train_loss += loss.item()
+                
+                # Cleanup after every 10 batches
+                if batch_idx % 10 == 0:
+                    torch.cuda.empty_cache()
+                    gc.collect()
+                
+                print()
+            
+            # Validation loop
+            self.model.eval()
+            val_loss = 0.0
+            with torch.no_grad():
+                for batch in test_loader:
+                    loss = self.validation_step(batch, None)
+                    val_loss += loss.item()
+            
+            avg_val_loss = val_loss / len(test_loader)
+            
+            # Save checkpoint if improved
+            if avg_val_loss < best_val_loss:
+                best_val_loss = avg_val_loss
+                torch.save({
+                    'model_state_dict': self.model.state_dict(),
+                    'config': config,
+                    'state': torch.random.get_rng_state()
+                }, os.path.join(output_path, 'checkpoint.pth'))
+            
+            print(f'Epoch {epoch}: Val Loss {avg_val_loss:.4f}')
+            
+            # Final cleanup for epoch
+            torch.cuda.empty_cache()
+            gc.collect()
         
 
     @torch.no_grad()
@@ -183,7 +240,6 @@ class eLDM:
 
         model = self.model.to(self.device)
         sampler = PLMSSampler(model)
-        # sampler = DDIMSampler(model)
         if state is not None:
             torch.cuda.set_rng_state(state)
             
@@ -193,14 +249,17 @@ class eLDM:
                 if limit is not None:
                     if count >= limit:
                         break
-                print(item)
+                
+                # Memory monitoring
+                if count % 10 == 0:
+                    print(f"\nMemory usage before sample {count}:")
+                    print(f"CPU RAM: {psutil.virtual_memory().used/1024**3:.2f}GB / {psutil.virtual_memory().total/1024**3:.2f}GB")
+                    print(f"GPU RAM: {torch.cuda.memory_allocated()/1024**3:.2f}GB / {torch.cuda.memory_reserved()/1024**3:.2f}GB")
+                
                 latent = item['eeg']
-                gt_image = rearrange(item['image'], 'h w c -> 1 c h w') # h w c
-                print(f"rendering {num_samples} examples in {ddim_steps} steps.")
-                # assert latent.shape[-1] == self.fmri_latent_dim, 'dim error'
+                gt_image = rearrange(item['image'], 'h w c -> 1 c h w')
                 
                 c, re_latent = model.get_learned_conditioning(repeat(latent, 'h w -> c h w', c=num_samples).to(self.device))
-                # c = model.get_learned_conditioning(repeat(latent, 'h w -> c h w', c=num_samples).to(self.device))
                 samples_ddim, _ = sampler.sample(S=ddim_steps, 
                                                 conditioning=c,
                                                 batch_size=num_samples,
@@ -211,13 +270,23 @@ class eLDM:
                 x_samples_ddim = torch.clamp((x_samples_ddim+1.0)/2.0, min=0.0, max=1.0)
                 gt_image = torch.clamp((gt_image+1.0)/2.0, min=0.0, max=1.0)
                 
-                all_samples.append(torch.cat([gt_image, x_samples_ddim.detach().cpu()], dim=0)) # put groundtruth at first
+                # Store sample and immediately clean up
+                sample = torch.cat([gt_image, x_samples_ddim.detach().cpu()], dim=0)
+                all_samples.append(sample)
+                
                 if output_path is not None:
-                    samples_t = (255. * torch.cat([gt_image, x_samples_ddim.detach().cpu()], dim=0).numpy()).astype(np.uint8)
+                    samples_t = (255. * sample.numpy()).astype(np.uint8)
                     for copy_idx, img_t in enumerate(samples_t):
                         img_t = rearrange(img_t, 'c h w -> h w c')
                         Image.fromarray(img_t).save(os.path.join(output_path, 
                             f'./test{count}-{copy_idx}.png'))
+                
+                # Explicit cleanup
+                del latent, gt_image, c, re_latent, samples_ddim, x_samples_ddim, sample
+                if 'samples_t' in locals():
+                    del samples_t
+                torch.cuda.empty_cache()
+                gc.collect()
         
         # display as grid
         grid = torch.stack(all_samples, 0)

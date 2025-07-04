@@ -9,14 +9,12 @@ import os
 import torch
 import torch.nn as nn
 import numpy as np
-import pytorch_lightning as pl
 from torch.optim.lr_scheduler import LambdaLR
 from einops import rearrange, repeat
 from contextlib import contextmanager
 from functools import partial
 from tqdm import tqdm
 from torchvision.utils import make_grid
-from pytorch_lightning.utilities.distributed import rank_zero_only
 
 from dc_ldm.util import log_txt_as_img, exists, default, ismap, isimage, mean_flat, count_params, instantiate_from_config
 from dc_ldm.modules.ema import LitEma
@@ -44,7 +42,7 @@ def uniform_on_device(r1, r2, shape, device):
     return (r1 - r2) * torch.rand(*shape, device=device) + r2
 
 
-class DDPM(pl.LightningModule):
+class DDPM(nn.Module):
     # classic DDPM with Gaussian diffusion, in image space
     def __init__(self,
                  unet_config,
@@ -348,7 +346,7 @@ class DDPM(pl.LightningModule):
         if len(x.shape) == 3:
             x = x[..., None]
         x = rearrange(x, 'b h w c -> b c h w')
-        x = x.to(memory_format=torch.contiguous_format).float()
+        x = x.to(memory_format=torch.contiguous_format)
         return x
 
     def shared_step(self, batch):
@@ -362,8 +360,9 @@ class DDPM(pl.LightningModule):
         
         loss, loss_dict = self.shared_step(batch)
 
-        self.log_dict(loss_dict, prog_bar=True,
-                    logger=True, on_step=False, on_epoch=True)
+        # print(loss_dict)
+        # self.log_dict(loss_dict, prog_bar=True,
+        #             logger=True, on_step=False, on_epoch=True)
 
         if self.use_scheduler:
             lr = self.optimizers().param_groups[0]['lr']
@@ -627,7 +626,6 @@ class LatentDiffusion(DDPM):
         ids = torch.round(torch.linspace(0, self.num_timesteps - 1, self.num_timesteps_cond)).long()
         self.cond_ids[:self.num_timesteps_cond] = ids
 
-    @rank_zero_only
     @torch.no_grad()
     def on_train_batch_start(self, batch, batch_idx, dataloader_idx):
         # only for very first batch
@@ -729,7 +727,7 @@ class LatentDiffusion(DDPM):
 
     def get_first_stage_encoding(self, encoder_posterior):
         if isinstance(encoder_posterior, DiagonalGaussianDistribution):
-            z = encoder_posterior.sample()
+            z = encoder_posterior.sample().half()
         elif isinstance(encoder_posterior, torch.Tensor):
             z = encoder_posterior
         else:
@@ -842,6 +840,7 @@ class LatentDiffusion(DDPM):
         x = super().get_input(batch, k)
         if bs is not None:
             x = x[:bs]
+        self.device = next(self.parameters()).device
         x = x.to(self.device)
         encoder_posterior = self.encode_first_stage(x)
         # print('encoder_posterior.shape')
@@ -1557,10 +1556,10 @@ class LatentDiffusion(DDPM):
         return x
 
 
-class DiffusionWrapper(pl.LightningModule):
+class DiffusionWrapper(nn.Module):
     def __init__(self, diff_model_config, conditioning_key):
         super().__init__()
-        self.diffusion_model = instantiate_from_config(diff_model_config)
+        self.diffusion_model = instantiate_from_config(diff_model_config).half()
         self.conditioning_key = conditioning_key
         assert self.conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm']
 
@@ -1586,7 +1585,7 @@ class DiffusionWrapper(pl.LightningModule):
         return out
 
 
-class EEGClassifier(pl.LightningModule):
+class EEGClassifier:
     """main class"""
     def __init__(self,
                 first_stage_config,

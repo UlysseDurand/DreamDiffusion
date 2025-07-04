@@ -42,6 +42,7 @@ model:
         context_dim: 768
         use_checkpoint: True
         legacy: False
+        use_fp16: True
 
     first_stage_config:
       target: dc_ldm.models.autoencoder.AutoencoderKL

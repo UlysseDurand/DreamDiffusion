@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-import pytorch_lightning as pl
 from sklearn import metrics
 from typing import Any
 import numpy as np
@@ -62,7 +61,7 @@ use_channels_names=[
                 'O1', 'O2'
     ]
 
-class LitEEGPTCausal(pl.LightningModule):
+class LitEEGPTCausal(nn.Module):
 
     def __init__(self, load_path="../checkpoint/eegpt_mcae_58chs_4s_large4E.ckpt"):
         super().__init__()    
@@ -155,12 +154,13 @@ class LitEEGPTCausal(pl.LightningModule):
         self.running_scores["train"].append((label.clone().detach().cpu(), y_score.clone().detach().cpu()))
         # rocauc = metrics.roc_auc_score(label.clone().detach().cpu(), y_score)
         # Logging to TensorBoard by default
-        self.log('train_loss', loss, on_epoch=True, on_step=False)
-        self.log('train_acc', accuracy, on_epoch=True, on_step=False)
-        self.log('data_avg', x.mean(), on_epoch=True, on_step=False)
-        self.log('data_max', x.max(), on_epoch=True, on_step=False)
-        self.log('data_min', x.min(), on_epoch=True, on_step=False)
-        self.log('data_std', x.std(), on_epoch=True, on_step=False)
+        if hasattr(self, 'trainer') and self.trainer is not None:
+            self.log('train_loss', loss, on_epoch=True, on_step=False)
+            self.log('train_acc', accuracy, on_epoch=True, on_step=False)
+            self.log('data_avg', x.mean(), on_epoch=True, on_step=False)
+            self.log('data_max', x.max(), on_epoch=True, on_step=False)
+            self.log('data_min', x.min(), on_epoch=True, on_step=False)
+            self.log('data_std', x.std(), on_epoch=True, on_step=False)
         
         return loss
         
@@ -204,8 +204,9 @@ class LitEEGPTCausal(pl.LightningModule):
         self.running_scores["valid"].append((label.clone().detach().cpu(), y_score.clone().detach().cpu()))
 
         # Logging to TensorBoard by default
-        self.log('valid_loss', loss, on_epoch=True, on_step=False)
-        self.log('valid_acc', accuracy, on_epoch=True, on_step=False)
+        if hasattr(self, 'trainer') and self.trainer is not None:
+            self.log('valid_loss', loss, on_epoch=True, on_step=False)
+            self.log('valid_acc', accuracy, on_epoch=True, on_step=False)
         
         return loss
     def on_train_epoch_start(self) -> None:
@@ -251,8 +252,9 @@ class LitEEGPTCausal(pl.LightningModule):
         y_score =  torch.softmax(y_score, dim=-1)[:,1]
         self.running_scores["test"].append((label.clone().detach().cpu(), y_score.clone().detach().cpu()))
         # Logging to TensorBoard by default
-        self.log('test_loss', loss, on_epoch=True, on_step=False)
-        self.log('test_acc', accuracy, on_epoch=True, on_step=False)
+        if hasattr(self, 'trainer') and self.trainer is not None:
+            self.log('test_loss', loss, on_epoch=True, on_step=False)
+            self.log('test_acc', accuracy, on_epoch=True, on_step=False)
         
         return loss
     
@@ -290,7 +292,7 @@ class EEGPT2DD(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # In input, x has shape [B, 128, 512]
-        x = x[:, :19, :] 
+        x = x[:, :19, :]
         x = self.basemodel.encode(x)
         # x: [B, 15, 4, 512]
         # Flatten spatial dimensions
